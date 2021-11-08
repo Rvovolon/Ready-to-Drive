@@ -1,0 +1,190 @@
+
+
+/*
+Miguel Ángel Domínguez Socorro
+8/11/21
+
+Para el correcto funcionamiento del código se pretende enviar una señal a la controladora para activar la alta tensión
+después de las siguientes condiciones
+Primero debemos pulsar un boton en el cockpit del vehículo, boton de Start 
+Y se debe mantener accionado el pedal del freno; se estipula el 33% como un valor suficiente
+
+Cuando estás condiciones se cumplan, ambas a la vez se activara un led, un zumbador y una señal que recibira la controladora del vehículo
+
+El led es una luz que estará visible para el piloto
+El zumbador debe consegir una resonancia de 90dB durante 2-3 segundos
+Se activa la señal que recibe la controladora para activar el vehículo
+
+*/
+#define NOTE_C4  262
+
+
+const int Led_RTD = 3; // Led del sistema "Ready To Drive"
+const int Pedal_Freno = 4; // El sensor del freno envia señal de 0.5-4.5, el 33% es 1.5V
+
+const int Zumbador = 6; // Zumbador que indica mediante un sonido de 80dB que el coche está listo para acelerar. (Ready To Drive Sound).
+const int START = 7; // Pulsador "START" ubicado en el panel piloto.
+const long t_freeze = 2500; //Tiempo que permanece el RTDS (Zumbador) encendido. En este caso 3 segundo
+int t_zero = 0;
+int z_on = 0;
+int zumbador_on = 0;
+int state; //Estado de la maquina de estados
+int PEDAL; // El sensor del freno envia señal de 0.5-4.5, el 33% es 1.5V
+int Est_START; //Estado del pulsador START (HIGH o LOW)
+int Est_Rele_SD; // Estado del contacto del relé del Shutdown Circuit (Abierto o cerrado)
+int yap = 0;
+
+int melody[] = {
+  NOTE_C4, //Nota que suena en el zumbador
+};
+
+// note durations: 4 = quarter note, 8 = eighth note, etc.:
+int noteDurations[] = {
+    2,
+};
+
+void setup () {
+  Serial.begin(9600);
+  pinMode (Led_RTD, OUTPUT); // Declaramos el Led_RTD como salida
+  pinMode (Pedal_Freno, INPUT); // Declaramos el Pedal_Freno como entrada
+  pinMode (START, INPUT); // Declaramos el START como entrada
+  pinMode (Zumbador, OUTPUT); //Declaramos el Zumbador como salida
+}
+
+void loop () {
+
+  PEDAL = digitalRead (Pedal_Freno) / 1024; //Estado en el que se encuentra el pedal de freno
+  // 0 - 1023. El 33% es 337 
+  
+  Est_START = digitalRead (START); //Estado en el que se encuentra el pulsador de "START"
+  Est_Rele_SD = digitalRead (Rele_SD); //Estado en el que se encuentra el pulsador de "START"
+  Serial.println (PEDAL);
+  delay(250);
+  
+  //MAQUINA DE ESTADOS
+  
+  if (Est_START == LOW && Est_Rele_SD == LOW && PEDAL < 337 && yap == 0) {  
+    state = 0;
+  }
+  if (Est_START == LOW && Est_Rele_SD == LOW && PEDAL >= 337 && yap == 0) {
+    state = 1;
+  }
+  if (Est_START == LOW && Est_Rele_SD == HIGH && PEDAL < 337 && yap == 0) {
+    state = 2;
+  }
+  if (Est_START == LOW && Est_Rele_SD == HIGH && PEDAL >= 337 && yap == 0) { /* Coche apagado, listo para empezar */
+    state = 3;
+  }
+  if (Est_Rele_SD == HIGH && PEDAL >= 337 && yap == 1) { /* Coche encendido, ignorar entrada de START con pedal activo */
+    state = 8;
+  }
+  if (Est_Rele_SD == HIGH && PEDAL < 337 && yap == 1) { /* Coche encendido, ignorar entrada de START con pedal inactivo  */
+    state = 9;
+  }
+  if (Est_START == HIGH && Est_Rele_SD == LOW && PEDAL < 337 && yap == 0) {
+    state = 4;
+  }
+  if (Est_START == HIGH && Est_Rele_SD == LOW && PEDAL >= 337 && yap == 0) {
+    state = 5;
+  }
+  if (Est_START == HIGH && Est_Rele_SD == HIGH && PEDAL < 337 && yap == 0) {
+    state = 6;
+  }
+  if (Est_START == HIGH && Est_Rele_SD == HIGH && PEDAL >= 337 && yap == 0) { //Estado ok, todo funcionando
+    state = 7;
+  }
+  
+  Serial.println(Est_Rele_SD);
+  Serial.println(Est_START);
+  Serial.println(state);
+
+
+  switch (state) {
+    case 0:
+      digitalWrite(Led_RTD, LOW);
+      digitalWrite(Zumbador, LOW);
+      break;
+    case 1:
+      digitalWrite(Led_RTD, LOW);
+      digitalWrite(Zumbador, LOW);
+      break;
+    case 2:
+      digitalWrite(Led_RTD, LOW);
+      digitalWrite(Zumbador, LOW);
+      break;
+    case 3:
+      digitalWrite(Led_RTD, LOW);
+      digitalWrite(Zumbador, LOW);
+      break;
+    case 4:
+      digitalWrite(Led_RTD, LOW);
+      digitalWrite(Zumbador, LOW);
+      break;
+    case 5:
+      digitalWrite(Led_RTD, LOW);
+      digitalWrite(Zumbador, LOW);
+      break;
+    case 6:
+      digitalWrite(Led_RTD, LOW);
+      digitalWrite(Zumbador, LOW);
+      break;
+    case 7:
+      digitalWrite(Led_RTD, HIGH);
+      digitalWrite(Zumbador, HIGH);
+      
+      zumbador_on = 1; 
+      t_zero = millis();
+      
+      while (zumbador_on == 1) {
+        Est_Rele_SD = digitalRead (Pedal_Freno); //Actualización del estado del SD dentro del bucle
+        PEDAL = analogRead (Pedal_Freno) / 1024; //Actualización del porcentaje del pedal de freno, dentro del bucle
+        if (PEDAL > 25 && Est_Rele_SD == HIGH) { 
+          z_on = millis();
+          int diferencia = z_on - t_zero;
+          if (diferencia >= t_freeze) {
+            yap = 1;
+            zumbador_on = 0;
+          }
+        }
+        else {
+          zumbador_on = 0; //Si en cualquier momento se dejan de cumplir las condiciones, sale del bucle cancelando el zumbador_on
+        }
+      }
+
+      for (int thisNote = 0; thisNote <  7; thisNote++) {
+
+      // to calculate the note duration, take one second divided by the note type.
+      //e.g. quarter note = 1000 / 4, eighth note = 1000/8, etc.
+      int noteDuration = 1000 / noteDurations[thisNote];
+      tone(5, melody[thisNote], noteDuration);
+
+      // to distinguish the notes, set a minimum time between them.
+      // the note's duration + 30% seems to work well:
+      int pauseBetweenNotes = noteDuration * 1;
+      delay(pauseBetweenNotes);
+      // stop the tone playing:
+      noTone(5);
+      }
+  
+      break;
+    case 8:
+      digitalWrite(Led_RTD, LOW);
+      digitalWrite(RTDS, LOW);
+      digitalWrite(Rele_RTD, HIGH);
+      if (Est_Rele_SD == HIGH) {
+        yap = 1;
+      } else {
+        yap = 0;
+      }
+      break;
+    case 9:
+      digitalWrite(Rele_RTD, HIGH);
+       if (Est_Rele_SD == HIGH) {
+          yap = 1;
+        } else {
+          yap = 0;
+        }
+
+  }
+  delay(10);
+}
